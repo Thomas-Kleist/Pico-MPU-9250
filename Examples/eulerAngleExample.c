@@ -15,14 +15,10 @@ int main()
 
     int16_t acceleration[3], eulerAngles[2], fullAngles[2];
 
-    mpu9250_read_raw(acceleration);
-
-    calculate_angles(eulerAngles, acceleration);
-
     while (1)
     {
         mpu9250_read_raw(acceleration);
-        calculate_angles(eulerAngles, acceleration);\
+        calculate_angles(eulerAngles, acceleration);
         convert_to_full(eulerAngles, acceleration, fullAngles);
 
         printf("Acc. X = %d, Y = %d, Z = %d\n", acceleration[0], acceleration[1], acceleration[2]);
