@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 
-mpu9250 mpu;
+mpu9250 mpu(100);  //Creates an mpu object
 
 int main()
 {
@@ -14,9 +14,7 @@ int main()
 
     while (1)
     {
-        mpu.updateAngles();
-        mpu.printData();
-
-        sleep_ms(100);
+        mpu.updateAngles();  //Uses the object to calculate the angles
+        mpu.printData();     //Uses the object to print the data
     }
 }

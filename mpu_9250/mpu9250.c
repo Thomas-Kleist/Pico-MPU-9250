@@ -1,9 +1,3 @@
-/**
- * Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
- *
- * SPDX-License-Identifier: BSD-3-Clause
- */
-
 #include <stdio.h>
 #include <string.h>
 #include "pico/stdlib.h"
@@ -12,12 +6,7 @@
 #include "mpu9250.h"
 
 /* Example code to talk to a MPU9250 MEMS accelerometer and gyroscope.
-   Ignores the magnetometer, that is left as a exercise for the reader.
-
-   This is taking to simple approach of simply reading registers. It's perfectly
-   possible to link up an interrupt line and set things up to read from the
-   inbuilt FIFO to make it more useful.
-
+   
    NOTE: Ensure the device is capable of being driven at 3.3v NOT 5v. The Pico
    GPIO (and therefor SPI) cannot be used at 5v.
 
@@ -88,7 +77,7 @@ void read_registers(uint8_t reg, uint8_t *buf, uint16_t len)
     sleep_ms(10);
 }
 
-void mpu9250_read_raw(int16_t accel[3]) {
+void mpu9250_read_raw_accel(int16_t accel[3]) { //Used to get the raw acceleration values from the mpu
     uint8_t buffer[6];
 
     // Start reading acceleration registers from register 0x3B for 6 bytes
@@ -99,7 +88,57 @@ void mpu9250_read_raw(int16_t accel[3]) {
     }
 }
 
-void calculate_angles(int16_t eulerAngles[2], int16_t accel[3])
+void mpu9250_read_raw_gyro(int16_t gyro[3]) {  //Used to get the raw gyro values from the mpu
+    uint8_t buffer[6];
+    
+    read_registers(0x43, buffer, 6);
+
+    for (int i = 0; i < 3; i++) {
+        gyro[i] = (buffer[i * 2] << 8 | buffer[(i * 2) + 1]);;
+    }
+}
+
+void calibrate_gyro(int16_t gyroCal[3], int loop)  //Used to calibrate the gyro. The gyro must be still while calibration happens
+{
+    int16_t temp[3];
+    for (int i = 0; i < loop; i++)
+    {
+        mpu9250_read_raw_gyro(temp);
+        gyroCal[0] += temp[0];
+        gyroCal[1] += temp[1];
+        gyroCal[2] += temp[2];
+    }
+    gyroCal[0] /= loop;
+    gyroCal[1] /= loop;
+    gyroCal[2] /= loop;
+}
+
+void calculate_angles(int16_t eulerAngles[2], int16_t accel[3], int16_t gyro[3], uint64_t usSinceLastReading) //Calculates angles based on the accelerometer and gyroscope. Requires usSinceLastReading to use the gyro.
+{
+    long hertz = 1000000/usSinceLastReading;
+    
+    if (hertz < 200)
+    {
+        calculate_angles_from_accel(eulerAngles, accel);
+        return;
+    }
+
+    long temp = 1.l/(hertz * 65.5l);  
+
+    eulerAngles[0] += gyro[0] * temp;
+    eulerAngles[1] += gyro[1] * temp;
+
+    eulerAngles[0] += eulerAngles[1] * sin(gyro[2] * temp * 0.1f);
+    eulerAngles[1] -= eulerAngles[0] * sin(gyro[2] * temp * 0.1f);
+
+    int16_t accelEuler[2];
+    calculate_angles_from_accel(accelEuler, accel);
+
+    eulerAngles[0] = eulerAngles[0] * 0.9996 + accelEuler[0] * 0.0004;
+    eulerAngles[1] = eulerAngles[1] * 0.9996 + accelEuler[1] * 0.0004;
+}
+
+void calculate_angles_from_accel(int16_t eulerAngles[2], int16_t accel[3]) //Uses just the direction gravity is pulling to calculate angles.
 {
     float accTotalVector = sqrt((accel[0] * accel[0]) + (accel[1] * accel[1]) + (accel[2] * accel[2]));
 
@@ -110,7 +149,7 @@ void calculate_angles(int16_t eulerAngles[2], int16_t accel[3])
     eulerAngles[1] = angleRollAcc;
 }
 
-void convert_to_full(int16_t eulerAngles[2], int16_t accel[3], int16_t fullAngles[2])
+void convert_to_full(int16_t eulerAngles[2], int16_t accel[3], int16_t fullAngles[2]) //Converts from -90/90 to 360 using the direction gravity is pulling
 {
     if (accel[1] > 0 && accel[2] > 0) fullAngles[0] = eulerAngles[0];
     if (accel[1] > 0 && accel[2] < 0) fullAngles[0] = 180 - eulerAngles[0];
@@ -123,7 +162,7 @@ void convert_to_full(int16_t eulerAngles[2], int16_t accel[3], int16_t fullAngle
     if (accel[0] > 0 && accel[2] > 0) fullAngles[1] = 360 + eulerAngles[1];
 }
 
-void start_spi()
+void start_spi() //Starts the mpu and resets it
 {
     spi_init(SPI_PORT, 500 * 1000);
     gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
